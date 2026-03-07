@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Seat Booking System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .seat { transition: transform 0.2s, background-color 0.2s; }
+        .seat:hover:not(.booked) { transform: scale(1.1); cursor: pointer; }
+        .booked { background-color: #ef4444; color: white; cursor: not-allowed; opacity: 0.8; }
+        .available { background-color: #22c55e; color: white; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+    <div class="max-w-5xl mx-auto py-10 px-4">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">Bus Seat Booking System</h1>
+            <p class="text-gray-500">Live seat selection and passenger management</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <!-- Seat Grid Section -->
+            <section class="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                <h2 class="text-2xl font-bold mb-6 text-gray-700">Select a Seat</h2>
+                <div class="flex justify-between items-center mb-6">
+                    <div class="flex items-center space-x-2"><div class="w-5 h-5 bg-green-500 rounded"></div><span>Available</span></div>
+                    <div class="flex items-center space-x-2"><div class="w-5 h-5 bg-red-500 rounded"></div><span>Booked</span></div>
+                </div>
+                <div class="grid grid-cols-4 gap-4" id="seat-grid">
+                    <!-- Seats will be injected by JS -->
+                </div>
+            </section>
+
+            <!-- Passenger List & Booking Modal Section -->
+            <section>
+                <!-- Booking Form (Hidden by Default) -->
+                <div id="booking-form-container" class="hidden bg-white p-8 rounded-2xl shadow-lg border border-gray-100 mb-10 transition-all">
+                    <h2 class="text-2xl font-bold mb-6 text-blue-600" id="form-title">Book Seat #X</h2>
+                    <div class="space-y-4">
+                        <input type="hidden" id="selected-seat-id">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">Passenger Name</label>
+                            <input type="text" id="passenger-name" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none" placeholder="John Doe">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">Gender</label>
+                            <select id="passenger-gender" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="flex space-x-3 pt-4">
+                            <button onclick="submitBooking()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Confirm Booking</button>
+                            <button onclick="cancelSelection()" class="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-colors">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Passenger List -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 h-full">
+                    <h2 class="text-2xl font-bold mb-6 text-gray-700">Passenger List</h2>
+                    <ul id="passenger-list" class="divide-y divide-gray-200 overflow-y-auto max-h-96">
+                        <!-- Passengers injected by JS -->
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 transform transition-transform translate-y-20 opacity-0 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-xl font-medium">
+        Notification message
+    </div>
+
+    <script>
+        let currentSeats = [];
+
+        async function fetchSeats() {
+            try {
+                const response = await fetch('/api/seats');
+                currentSeats = await response.json();
+                renderSeats();
+                renderPassengers();
+            } catch (error) {
+                showToast("Failed to connect to server.", true);
+            }
+        }
+
+        function renderSeats() {
+            const grid = document.getElementById('seat-grid');
+            grid.innerHTML = '';
+            currentSeats.forEach(seat => {
+                const div = document.createElement('div');
+                div.className = `seat flex flex-col items-center justify-center p-4 rounded-xl shadow font-bold text-lg select-none ${seat.status === 'Booked' ? 'booked' : 'available'}`;
+                div.innerText = seat.id;
+                
+                if (seat.status === 'Available') {
+                    div.onclick = () => selectSeat(seat.id);
+                } else {
+                    div.onclick = () => promptCancel(seat.id, seat.name);
+                }
+                grid.appendChild(div);
+            });
+        }
+
+        function renderPassengers() {
+            const list = document.getElementById('passenger-list');
+            list.innerHTML = '';
+            let hasBookings = false;
+
+            currentSeats.forEach(seat => {
+                if (seat.status === 'Booked') {
+                    hasBookings = true;
+                    const li = document.createElement('li');
+                    li.className = 'py-4 flex justify-between items-center';
+                    li.innerHTML = `
+                        <div class="flex items-center space-x-4">
+                            <div class="w-10 h-10 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full font-bold">
+                                ${seat.id}
+                            </div>
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800">${seat.name}</p>
+                                <p class="text-xs text-gray-500">${seat.gender}</p>
+                            </div>
+                        </div>
+                        <button onclick="promptCancel(${seat.id}, '${seat.name}')" class="text-sm text-red-500 hover:text-red-700 font-medium">Cancel</button>
+                    `;
+                    list.appendChild(li);
+                }
+            });
+
+            if (!hasBookings) {
+                list.innerHTML = '<p class="text-gray-500 italic mt-4 text-center">No seats booked yet.</p>';
+            }
+        }
+
+        function selectSeat(id) {
+            document.getElementById('booking-form-container').classList.remove('hidden');
+            document.getElementById('form-title').innerText = `Book Seat #${id}`;
+            document.getElementById('selected-seat-id').value = id;
+            document.getElementById('passenger-name').value = '';
+            document.getElementById('passenger-name').focus();
+        }
+
+        function cancelSelection() {
+            document.getElementById('booking-form-container').classList.add('hidden');
+        }
+
+        async function submitBooking() {
+            const id = document.getElementById('selected-seat-id').value;
+            const name = document.getElementById('passenger-name').value.trim();
+            const gender = document.getElementById('passenger-gender').value;
+
+            if (!name) {
+                showToast("Please enter a passenger name.", true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, name, gender })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast(result.message);
+                    cancelSelection();
+                    fetchSeats();
+                } else {
+                    showToast(result.message, true);
+                }
+            } catch (error) {
+                showToast("Failed to book seat.", true);
+            }
+        }
+
+        async function promptCancel(id, name) {
+            if (confirm(`Are you sure you want to cancel the booking for ${name} (Seat #${id})?`)) {
+                try {
+                    const response = await fetch('/api/cancel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        showToast(result.message);
+                        fetchSeats();
+                    } else {
+                        showToast(result.message, true);
+                    }
+                } catch (error) {
+                    showToast("Failed to cancel seat.", true);
+                }
+            }
+        }
+
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.innerText = message;
+            toast.style.backgroundColor = isError ? '#ef4444' : '#1f2937';
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Initialize App
+        fetchSeats();
+    </script>
+</body>
+</html>
